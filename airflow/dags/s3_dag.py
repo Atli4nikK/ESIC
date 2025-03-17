@@ -101,12 +101,12 @@ with DAG(
                     type="bind"
                 ),
                 Mount(
-                    source=f"C:/Users/koldyrkaev/Desktop/GIT/ESIC/train_model/no_cars/{keyword}",
+                    source=f"C:/Users/koldyrkaev/Desktop/GIT/ESIC/car_checker/no_cars/{keyword}",
                     target="/app/no_cars",
                     type="bind"
                 ),
                 Mount(
-                    source="C:/Users/koldyrkaev/Desktop/GIT/ESIC/train_model/check.txt",
+                    source="C:/Users/koldyrkaev/Desktop/GIT/ESIC/car_checker/check.txt",
                     target="/app/check.txt",
                     type="bind"
                 ),
