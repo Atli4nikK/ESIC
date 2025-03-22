@@ -1,0 +1,1 @@
+best_model_path: ./train/lightning_logs\version_0\checkpoints\epoch=00-val_accuracy=0.6416.ckpt
