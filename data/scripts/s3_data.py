@@ -1,15 +1,17 @@
 import os
 import boto3
+import yaml
 
-# Твои креды
 
+with open("s3_data_cfg.yaml", "r") as file:
+    cfg = yaml.safe_load(file)
 
 # Подключение к хранилищу
 s3 = boto3.client(
     "s3",
-    aws_access_key_id=aws_access_key_id,
-    aws_secret_access_key=aws_secret_access_key,
-    endpoint_url=endpoint_url,
+    aws_access_key_id=cfg["aws_access_key_id"],
+    aws_secret_access_key=cfg["aws_secret_access_key"],
+    endpoint_url=cfg["endpoint_url"],
 )
 
 # Имя бакета (замени на нужное)
