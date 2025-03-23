@@ -1,55 +1,95 @@
 import os
+import logging
+from pathlib import Path
+from typing import Optional
+
 import boto3
 import yaml
+from botocore.exceptions import BotoCoreError, NoCredentialsError
 
 
-with open("s3_data_cfg.yaml", "r") as file:
-    cfg = yaml.safe_load(file)
+# Настроим логирование
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
-# Подключение к хранилищу
-s3 = boto3.client(
-    "s3",
-    aws_access_key_id=cfg["aws_access_key_id"],
-    aws_secret_access_key=cfg["aws_secret_access_key"],
-    endpoint_url=cfg["endpoint_url"],
-)
+# Пути и файлы
+CONFIG_PATH = "s3_data_cfg.yaml"
+LOCAL_ROOT = Path("./data/s3_downloaded")
 
-# Имя бакета (замени на нужное)
-bucket_name = "koldyrkaevs3"
+# Функция загрузки конфигурации
+def load_config(config_path: str) -> dict:
+    """Загружает конфигурацию из YAML-файла."""
+    try:
+        with open(config_path, "r") as file:
+            return yaml.safe_load(file)
+    except FileNotFoundError:
+        logger.error(f"Файл конфигурации {config_path} не найден.")
+        raise
+    except yaml.YAMLError as e:
+        logger.error(f"Ошибка парсинга YAML: {e}")
+        raise
 
-# Локальная папка, куда всё скачивать
-local_root = "./data/s3_downloaded"
+# Функция создания клиента S3
+def create_s3_client(config: dict):
+    """Создает и возвращает клиент S3."""
+    try:
+        return boto3.client(
+            "s3",
+            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID", config["aws_access_key_id"]),
+            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", config["aws_secret_access_key"]),
+            endpoint_url=config["endpoint_url"],
+        )
+    except KeyError as e:
+        logger.error(f"Отсутствует ключ конфигурации: {e}")
+        raise
+    except BotoCoreError as e:
+        logger.error(f"Ошибка подключения к S3: {e}")
+        raise
 
-# Функция для загрузки всех файлов из бакета
-def download_all_files():
-    continuation_token = None  # Токен для загрузки следующих частей файлов
+# Функция скачивания файлов
+def download_all_files(s3, bucket_name: str, local_root: Path):
+    """Скачивает все файлы из указанного S3-бакета в локальную папку."""
+    local_root.mkdir(parents=True, exist_ok=True)  # Убедимся, что папка существует
+    continuation_token: Optional[str] = None  # Токен для постраничной загрузки
 
-    while True:
-        # Запрашиваем список файлов (максимум 1000 за раз)
-        if continuation_token:
-            response = s3.list_objects_v2(Bucket=bucket_name, ContinuationToken=continuation_token)
-        else:
-            response = s3.list_objects_v2(Bucket=bucket_name)
+    try:
+        while True:
+            response = s3.list_objects_v2(Bucket=bucket_name, ContinuationToken=continuation_token) if continuation_token else s3.list_objects_v2(Bucket=bucket_name)
 
-        # Если файлы есть, качаем
-        if "Contents" in response:
+            if "Contents" not in response:
+                logger.info("В бакете нет файлов для загрузки.")
+                return
+
             for obj in response["Contents"]:
-                file_key = obj["Key"]  # Полный путь файла в бакете (например, dataset/ambulance/image1.jpg)
-                local_path = os.path.join(local_root, file_key)  # Локальный путь сохранения
+                file_key = obj["Key"]
+                local_path = local_root / file_key
 
-                # Создаём локальную папку, если её нет
-                os.makedirs(os.path.dirname(local_path), exist_ok=True)
+                local_path.parent.mkdir(parents=True, exist_ok=True)  # Создаем каталог, если его нет
 
-                # Скачиваем файл
-                s3.download_file(bucket_name, file_key, local_path)
-                print(f"Скачан: {file_key} → {local_path}")
+                try:
+                    s3.download_file(bucket_name, file_key, str(local_path))
+                    logger.info(f"✅ Скачан: {file_key} → {local_path}")
+                except BotoCoreError as e:
+                    logger.error(f"Ошибка загрузки {file_key}: {e}")
 
-        # Проверяем, есть ли ещё файлы для загрузки
-        if response.get("IsTruncated"):  # Если список обрезан, загружаем дальше
-            continuation_token = response["NextContinuationToken"]
-        else:
-            break
+            if response.get("IsTruncated"):  # Если список файлов обрезан, продолжаем загрузку
+                continuation_token = response["NextContinuationToken"]
+            else:
+                break
 
-# Запуск скачивания
-download_all_files()
-print("✅ Все файлы скачаны!")
+    except BotoCoreError as e:
+        logger.error(f"Ошибка при запросе списка файлов из S3: {e}")
+    except NoCredentialsError:
+        logger.error("Ошибка аутентификации: Проверьте AWS_ACCESS_KEY_ID и AWS_SECRET_ACCESS_KEY")
+
+# Главная функция
+def main():
+    """Главная точка входа в программу."""
+    config = load_config(CONFIG_PATH)
+    s3 = create_s3_client(config)
+    bucket_name = config.get("bucket_name", "koldyrkaevs3")  # Можно переопределить в YAML
+    download_all_files(s3, bucket_name, LOCAL_ROOT)
+    logger.info("🎉 Все файлы успешно загружены!")
+
+if __name__ == "__main__":
+    main()

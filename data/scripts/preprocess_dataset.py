@@ -1,72 +1,74 @@
-import os
 import shutil
 import random
+import logging
+from pathlib import Path
+from typing import List
+
+# Настроим логирование
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
 # Пути
-BASE_DATASET = "./data/dataset_v1"
-NEW_DATASET = "./data/s3_downloaded/dataset"
-S3_FOLDER = "./data/s3_downloaded"
+BASE_DATASET = Path("./data/dataset_v1")
+NEW_DATASET = Path("./data/s3_downloaded/dataset")
+S3_FOLDER = Path("./data/s3_downloaded")
 
-TRAIN_DIR = os.path.join(BASE_DATASET, "train")
-TEST_DIR = os.path.join(BASE_DATASET, "test")
+TRAIN_DIR = BASE_DATASET / "train"
+TEST_DIR = BASE_DATASET / "test"
 
 # Доля данных для train и test
 TRAIN_RATIO = 0.8
 
 # Убеждаемся, что нужные папки существуют
-os.makedirs(TRAIN_DIR, exist_ok=True)
-os.makedirs(TEST_DIR, exist_ok=True)
+TRAIN_DIR.mkdir(parents=True, exist_ok=True)
+TEST_DIR.mkdir(parents=True, exist_ok=True)
 
+def is_folder_empty(path: Path) -> bool:
+    """Проверяет, пустая ли папка."""
+    return not any(path.iterdir())
 
-def is_folder_empty(path):
-    """Проверяет, пустая ли папка"""
-    return not any(os.listdir(path))
+def distribute_new_data(train_ratio: float = TRAIN_RATIO):
+    """Распределяет новые данные по train и test."""
+    if not NEW_DATASET.exists():
+        logger.warning(f"Папка {NEW_DATASET} не найдена. Нечего распределять.")
+        return
 
-
-def distribute_new_data():
-    for category in os.listdir(NEW_DATASET):
-        new_category_path = os.path.join(NEW_DATASET, category)
-
-        # Пропускаем, если это не папка
-        if not os.path.isdir(new_category_path):
+    for category_path in NEW_DATASET.iterdir():
+        if not category_path.is_dir():
             continue
 
-        print(f"Обрабатываем класс: {category}")
+        logger.info(f"Обрабатываем класс: {category_path.name}")
 
-        # Создаём папки в train и test, если их нет
-        train_category_path = os.path.join(TRAIN_DIR, category)
-        test_category_path = os.path.join(TEST_DIR, category)
-        os.makedirs(train_category_path, exist_ok=True)
-        os.makedirs(test_category_path, exist_ok=True)
+        # Создаём папки в train и test
+        train_category_path = TRAIN_DIR / category_path.name
+        test_category_path = TEST_DIR / category_path.name
+        train_category_path.mkdir(parents=True, exist_ok=True)
+        test_category_path.mkdir(parents=True, exist_ok=True)
 
-        # Получаем список всех новых файлов
-        new_files = [f for f in os.listdir(new_category_path) if os.path.isfile(os.path.join(new_category_path, f))]
+        # Получаем список всех файлов в категории
+        new_files: List[Path] = [f for f in category_path.iterdir() if f.is_file()]
         random.shuffle(new_files)  # Перемешиваем файлы
 
         # Разделяем файлы на train и test
-        split_index = int(len(new_files) * TRAIN_RATIO)
-        train_files = new_files[:split_index]
-        test_files = new_files[split_index:]
+        split_index = int(len(new_files) * train_ratio)
+        train_files, test_files = new_files[:split_index], new_files[split_index:]
 
-        # Копируем файлы
+        # Перемещаем файлы
         for file in train_files:
-            shutil.move(os.path.join(new_category_path, file), os.path.join(train_category_path, file))
+            file.rename(train_category_path / file.name)
 
         for file in test_files:
-            shutil.move(os.path.join(new_category_path, file), os.path.join(test_category_path, file))
+            file.rename(test_category_path / file.name)
 
-        print(f"Добавлено {len(train_files)} в train, {len(test_files)} в test")
+        logger.info(f"Добавлено {len(train_files)} в train, {len(test_files)} в test")
 
-    print("Добавление новых данных завершено!")
+    logger.info("✅ Добавление новых данных завершено!")
 
     # Проверяем, пустые ли все папки в s3_downloaded/dataset
-    all_empty = all(is_folder_empty(os.path.join(NEW_DATASET, folder)) for folder in os.listdir(NEW_DATASET))
-
-    if all_empty:
-        print("Все папки пустые, удаляем s3_downloaded...")
+    if all(is_folder_empty(folder) for folder in NEW_DATASET.iterdir()):
+        logger.info("Все папки пустые, удаляем s3_downloaded...")
         shutil.rmtree(S3_FOLDER)
-        print("s3_downloaded успешно удалён!")
-
+        logger.info("✅ s3_downloaded успешно удалён!")
 
 if __name__ == "__main__":
     distribute_new_data()
