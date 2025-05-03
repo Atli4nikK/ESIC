@@ -1,0 +1,7 @@
+numpy<2
+onnx==1.16.1
+onnxruntime==1.16.1
+pandas==2.2.3
+Pillow==9.3.0
+streamlit==1.41.1
+torchvision==0.16.1

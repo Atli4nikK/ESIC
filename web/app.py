@@ -9,8 +9,8 @@ import hashlib
 from datetime import datetime
 
 # Пути
-FEEDBACK_FILE = "./web/feedback.csv"
-IMAGE_FOLDER = "./web/feedback_images"
+FEEDBACK_FILE = "feedback.csv"
+IMAGE_FOLDER = "feedback_images"
 
 # Создаем папку для изображений (если её нет)
 os.makedirs(IMAGE_FOLDER, exist_ok=True)
@@ -25,7 +25,7 @@ def get_image_hash(image):
 # Загрузка ONNX модели
 @st.cache_resource
 def load_model():
-    return ort.InferenceSession("./web/model.onnx")
+    return ort.InferenceSession("model.onnx")
 
 
 # Функция для предобработки изображения
