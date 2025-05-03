@@ -25,7 +25,7 @@ def get_image_hash(image):
 # Загрузка ONNX модели
 @st.cache_resource
 def load_model():
-    return ort.InferenceSession("./train/convert/converted_models/model.onnx")
+    return ort.InferenceSession("./web/model.onnx")
 
 
 # Функция для предобработки изображения
