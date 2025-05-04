@@ -1,7 +1,7 @@
 import streamlit as st
 import numpy as np
 import onnxruntime as ort
-from PIL import Image
+from PIL import Image, ImageOps
 import torchvision.transforms as transforms
 import pandas as pd
 import os
@@ -30,6 +30,8 @@ def load_model():
 
 # Функция для предобработки изображения
 def preprocess_image(image):
+    image = image.convert("RGB")
+
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ToTensor(),
@@ -39,18 +41,55 @@ def preprocess_image(image):
     return image
 
 
+# Стабильный softmax
 def stable_softmax(x):
-    e_x = np.exp(x - np.max(x))  # вычитаем максимум
-    return e_x / np.sum(e_x)
+    x = x - np.max(x)
+    e_x = np.exp(x)
+    sum_e_x = np.sum(e_x)
+    if sum_e_x == 0 or np.isnan(sum_e_x):
+        return np.full_like(x, fill_value=1.0 / len(x))  # безопасный fallback
+    return e_x / sum_e_x
 
 
-# Функция для выполнения инференса
-def predict(image, model, class_names):
-    input_tensor = preprocess_image(image)
-    outputs = model.run(None, {"input": input_tensor})
-    logits = outputs[0][0]  # <-- извлекаем логиты для одного изображения
-    probabilities = stable_softmax(logits)
-    return probabilities
+# Основная безопасная функция предсказания
+def safe_predict(image: Image.Image, model, input_name="input"):
+    try:
+        # Обработка EXIF-ориентации
+        image = ImageOps.exif_transpose(image)
+
+        # Приведение к RGB
+        image = image.convert("RGB")
+
+        # Преобразования
+        transform = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(std=[0.3481, 0.3755, 0.3738], mean=[0.6722, 0.6039, 0.6150]),
+        ])
+
+        tensor = transform(image).unsqueeze(0).numpy()  # [1, 3, H, W]
+
+        # Валидация формы
+        if tensor.shape[1] != 3:
+            st.warning(f"❗ Неверное число каналов: {tensor.shape[1]} (ожидалось 3)")
+            return None
+
+        # Прогон через модель
+        outputs = model.run(None, {input_name: tensor})
+        logits = outputs[0][0]  # [num_classes]
+
+        probabilities = stable_softmax(logits)
+
+        # Проверка NaN
+        if np.any(np.isnan(probabilities)):
+            st.warning("❗ Предсказание содержит NaN. Что-то пошло не так.")
+            return None
+
+        return probabilities
+
+    except Exception as e:
+        st.error(f"🔥 Ошибка предсказания: {str(e)}")
+        return None
 
 
 # Функция для сохранения обратной связи с изображением
@@ -101,7 +140,9 @@ def main():
 
         # Запуск предсказания
         st.write("🔍 **Предсказания модели:**")
-        probabilities = predict(image, model, class_names)
+        probabilities = safe_predict(image, model, input_name="input")
+        if probabilities is None:
+            st.stop()  # останавливаем выполнение
         predicted_class = class_names[np.argmax(probabilities)]
 
         # Отображаем вероятности в виде столбиков
