@@ -39,12 +39,18 @@ def preprocess_image(image):
     return image
 
 
+def stable_softmax(x):
+    e_x = np.exp(x - np.max(x))  # вычитаем максимум
+    return e_x / np.sum(e_x)
+
+
 # Функция для выполнения инференса
 def predict(image, model, class_names):
     input_tensor = preprocess_image(image)
     outputs = model.run(None, {"input": input_tensor})
-    probabilities = np.exp(outputs[0]) / np.sum(np.exp(outputs[0]))  # Softmax
-    return probabilities[0]
+    logits = outputs[0][0]  # <-- извлекаем логиты для одного изображения
+    probabilities = stable_softmax(logits)
+    return probabilities
 
 
 # Функция для сохранения обратной связи с изображением
